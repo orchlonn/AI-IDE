@@ -1,8 +1,17 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 import type * as MonacoEditor from "monaco-editor";
+import { getSupabase } from "@/lib/supabase";
+
+type ProjectRow = {
+  id: string;
+  name: string;
+  file_tree: FileNode[];
+  file_contents: Record<string, string>;
+  updated_at: string;
+};
 
 // Detect Monaco language ID from file name
 const extToLanguage: Record<string, string> = {
@@ -113,23 +122,7 @@ type ChatMessage = {
   id: string;
   role: "user" | "ai";
   content: string;
-  hasCode?: boolean;
 };
-
-const initialChatMessages: ChatMessage[] = [
-  {
-    id: "1",
-    role: "user",
-    content: "How can I optimize this component for performance?",
-  },
-  {
-    id: "2",
-    role: "ai",
-    content:
-      "You can memoize the component with `React.memo` and wrap the callback in `useCallback` to prevent unnecessary re-renders. Here's an example:",
-    hasCode: true,
-  },
-];
 
 function FileIcon({ extension }: { extension?: string }) {
   const color =
@@ -264,8 +257,19 @@ export default function Home() {
     () => new Map([["src/app/page.ts", placeholderCode]]),
   );
   const [code, setCode] = useState(placeholderCode);
-  const [chatMessages] = useState<ChatMessage[]>(initialChatMessages);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [indexing, setIndexing] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState("my-project");
+  const [projectList, setProjectList] = useState<
+    { id: string; name: string; updated_at: string }[]
+  >([]);
+  const [showProjectMenu, setShowProjectMenu] = useState(false);
+  const [saving, setSaving] = useState(false);
   const monacoEditorRef =
     useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -494,6 +498,206 @@ export default function Home() {
     e.preventDefault();
   }, []);
 
+  // Fetch project list from Supabase
+  const fetchProjects = useCallback(async () => {
+    const { data } = await getSupabase()
+      .from("projects")
+      .select("id, name, updated_at")
+      .order("updated_at", { ascending: false });
+    if (data) setProjectList(data);
+  }, []);
+
+  // Load a project from Supabase
+  const loadProject = useCallback(
+    async (id: string) => {
+      const { data } = await getSupabase()
+        .from("projects")
+        .select("*")
+        .eq("id", id)
+        .single();
+      if (!data) return;
+      const row = data as ProjectRow;
+      setProjectId(row.id);
+      setProjectName(row.name);
+      setFileTree(row.file_tree);
+      const contents = new Map(Object.entries(row.file_contents));
+      setFileContents(contents);
+
+      // Expand root folders
+      const rootFolders = new Set<string>();
+      for (const node of row.file_tree) {
+        if (node.type === "folder") rootFolders.add(node.name);
+      }
+      setExpandedFolders(rootFolders);
+
+      // Select first file
+      const firstPath = Object.keys(row.file_contents)[0];
+      if (firstPath) {
+        const name = firstPath.split("/").pop() ?? firstPath;
+        setSelectedPath(firstPath);
+        setCurrentFileName(name);
+        setLanguage(getLanguageFromFileName(name));
+        setCode(row.file_contents[firstPath] ?? "");
+      }
+      setShowProjectMenu(false);
+    },
+    [],
+  );
+
+  // Index project embeddings
+  const indexProject = useCallback(async (id: string) => {
+    setIndexing(true);
+    try {
+      await fetch("/api/embeddings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: id }),
+      });
+    } catch (err) {
+      console.error("Indexing failed:", err);
+    }
+    setIndexing(false);
+  }, []);
+
+  // Save current project to Supabase
+  const saveProject = useCallback(async () => {
+    // Make sure current file is saved to fileContents
+    const currentContents = new Map(fileContents);
+    currentContents.set(selectedPath, code);
+
+    let name = projectName;
+    if (!projectId) {
+      const input = prompt("Project name:", projectName);
+      if (!input) return;
+      name = input;
+    }
+
+    setSaving(true);
+    const payload = {
+      name,
+      file_tree: fileTree,
+      file_contents: Object.fromEntries(currentContents),
+      updated_at: new Date().toISOString(),
+    };
+
+    let savedId = projectId;
+    if (projectId) {
+      await getSupabase().from("projects").update(payload).eq("id", projectId);
+    } else {
+      const { data } = await getSupabase()
+        .from("projects")
+        .insert(payload)
+        .select("id")
+        .single();
+      if (data) {
+        setProjectId(data.id);
+        savedId = data.id;
+      }
+    }
+    setProjectName(name);
+    setSaving(false);
+
+    // Auto-index for AI search
+    if (savedId) indexProject(savedId);
+  }, [fileTree, fileContents, code, selectedPath, projectId, projectName, indexProject]);
+
+  // Delete a project
+  const deleteProject = useCallback(
+    async (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!confirm("Delete this project?")) return;
+      await getSupabase().from("projects").delete().eq("id", id);
+      if (projectId === id) setProjectId(null);
+      fetchProjects();
+    },
+    [projectId, fetchProjects],
+  );
+
+  // Send chat message
+  const sendChat = useCallback(async () => {
+    const question = chatInput.trim();
+    if (!question || !projectId || chatLoading) return;
+
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: "user",
+      content: question,
+    };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setChatInput("");
+    setChatLoading(true);
+
+    const aiMsg: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      role: "ai",
+      content: "",
+    };
+    setChatMessages((prev) => [...prev, aiMsg]);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: projectId, question }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setChatMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiMsg.id
+              ? { ...m, content: `Error: ${err.error || "Something went wrong"}` }
+              : m,
+          ),
+        );
+        setChatLoading(false);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      if (reader) {
+        let accumulated = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          accumulated += decoder.decode(value, { stream: true });
+          const text = accumulated;
+          setChatMessages((prev) =>
+            prev.map((m) => (m.id === aiMsg.id ? { ...m, content: text } : m)),
+          );
+        }
+      }
+    } catch {
+      setChatMessages((prev) =>
+        prev.map((m) =>
+          m.id === aiMsg.id
+            ? { ...m, content: "Error: Failed to connect to AI." }
+            : m,
+        ),
+      );
+    }
+    setChatLoading(false);
+  }, [chatInput, projectId, chatLoading]);
+
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  // Fetch projects when menu opens
+  useEffect(() => {
+    if (showProjectMenu) fetchProjects();
+  }, [showProjectMenu, fetchProjects]);
+
+  // Close project menu on outside click
+  useEffect(() => {
+    if (!showProjectMenu) return;
+    const handler = () => setShowProjectMenu(false);
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, [showProjectMenu]);
+
   return (
     <div
       className="flex h-screen flex-col bg-[var(--background)] text-[var(--foreground)]"
@@ -526,21 +730,81 @@ export default function Home() {
             </span>
           </div>
           <div className="h-5 w-px bg-[var(--border)]" />
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowProjectMenu((p) => !p)}
+              className="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-[#8b949e] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+            >
+              <span>{projectName}</span>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                <path d="M6 8L2 4h8L6 8z" />
+              </svg>
+            </button>
+            {showProjectMenu && (
+              <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-lg border border-[var(--border)] bg-[var(--sidebar-bg)] shadow-xl">
+                <div className="border-b border-[var(--border)] px-3 py-2">
+                  <p className="text-xs font-medium uppercase tracking-wider text-[#8b949e]">
+                    Projects
+                  </p>
+                </div>
+                <div className="max-h-64 overflow-y-auto">
+                  {projectList.length === 0 && (
+                    <p className="px-3 py-4 text-center text-sm text-[#8b949e]">
+                      No saved projects
+                    </p>
+                  )}
+                  {projectList.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => loadProject(p.id)}
+                      className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-[var(--hover-bg)] ${p.id === projectId ? "text-[var(--accent)]" : "text-[var(--foreground)]"}`}
+                    >
+                      <span className="truncate">{p.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="shrink-0 text-xs text-[#8b949e]">
+                          {new Date(p.updated_at).toLocaleDateString()}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => deleteProject(p.id, e)}
+                          className="shrink-0 rounded p-0.5 text-[#8b949e] hover:text-red-400"
+                          aria-label="Delete project"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          </svg>
+                        </button>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            className="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-[#8b949e] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+            onClick={saveProject}
+            disabled={saving}
+            className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-[#8b949e] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)] disabled:opacity-50"
+            aria-label="Save project"
           >
-            <span>my-project</span>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-              <path d="M6 8L2 4h8L6 8z" />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+              <polyline points="17 21 17 13 7 13 7 21" />
+              <polyline points="7 3 7 8 15 8" />
             </svg>
+            <span>{saving ? "Saving..." : "Save"}</span>
           </button>
-        </div>
-        <button
-          type="button"
-          className="rounded-md p-2 text-[#8b949e] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
-          aria-label="Settings"
-        >
+          <button
+            type="button"
+            className="rounded-md p-2 text-[#8b949e] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+            aria-label="Settings"
+          >
           <svg
             width="18"
             height="18"
@@ -552,7 +816,8 @@ export default function Home() {
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
-        </button>
+          </button>
+        </div>
       </header>
 
       <div className="relative flex flex-1 min-h-0">
@@ -655,7 +920,7 @@ export default function Home() {
           </div>
           <div className="flex flex-1 flex-col overflow-hidden">
             <div className="border-b border-[var(--border)] px-3 py-2">
-              <p className="truncate text-sm font-medium">my-project</p>
+              <p className="truncate text-sm font-medium">{projectName}</p>
             </div>
             <div className="flex-1 overflow-y-auto py-2">
               {fileTree.map((node) => (
@@ -777,6 +1042,16 @@ export default function Home() {
 
           <div className="flex flex-1 flex-col overflow-hidden">
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {chatMessages.length === 0 && (
+                <div className="flex flex-col items-center justify-center h-full text-center text-[#8b949e]">
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mb-3 opacity-50">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                  <p className="text-sm">
+                    {projectId ? "Ask a question about your code" : "Save your project first to enable AI chat"}
+                  </p>
+                </div>
+              )}
               {chatMessages.map((msg) => (
                 <div
                   key={msg.id}
@@ -789,48 +1064,43 @@ export default function Home() {
                         : "bg-[var(--chat-ai-bg)] text-[#e6edf3] rounded-bl-md"
                     }`}
                   >
-                    <p className="text-sm leading-relaxed">{msg.content}</p>
-                    {msg.hasCode && (
-                      <pre className="mt-3 rounded-lg bg-[var(--code-block-bg)] p-3 font-mono text-xs text-[#8b949e] border border-[var(--border)]">
-                        <code>React.memo(Counter)</code>
-                        <br />
-                        <code>
-                          useCallback(() =&gt; setCount(c =&gt; c + 1), [])
-                        </code>
-                      </pre>
-                    )}
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                   </div>
                 </div>
               ))}
+              {chatLoading && chatMessages[chatMessages.length - 1]?.content === "" && (
+                <div className="flex justify-start">
+                  <div className="rounded-2xl rounded-bl-md bg-[var(--chat-ai-bg)] px-4 py-3 shadow-md">
+                    <span className="text-sm text-[#8b949e] animate-pulse">Thinking...</span>
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
             </div>
 
             <div className="shrink-0 border-t border-[var(--border)] p-3">
-              <div className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--editor-bg)] px-3 py-2">
-                <button
-                  type="button"
-                  className="shrink-0 rounded p-1.5 text-[#8b949e] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
-                  aria-label="Attach file"
-                >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                  </svg>
-                </button>
+              {indexing && (
+                <p className="mb-2 text-xs text-[var(--accent)] animate-pulse">Indexing project for AI...</p>
+              )}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  sendChat();
+                }}
+                className="flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--editor-bg)] px-3 py-2"
+              >
                 <input
                   type="text"
-                  placeholder="Ask about this code…"
-                  className="min-w-0 flex-1 bg-transparent text-sm text-[var(--foreground)] placeholder:text-[#8b949e] focus:outline-none"
-                  readOnly
+                  placeholder={projectId ? "Ask about this code..." : "Save project to enable chat"}
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  disabled={!projectId || chatLoading}
+                  className="min-w-0 flex-1 bg-transparent text-sm text-[var(--foreground)] placeholder:text-[#8b949e] focus:outline-none disabled:opacity-50"
                 />
                 <button
-                  type="button"
-                  className="shrink-0 rounded bg-[var(--accent)] p-2 text-white transition-opacity hover:opacity-90"
+                  type="submit"
+                  disabled={!projectId || chatLoading || !chatInput.trim()}
+                  className="shrink-0 rounded bg-[var(--accent)] p-2 text-white transition-opacity hover:opacity-90 disabled:opacity-40"
                   aria-label="Send"
                 >
                   <svg
@@ -844,7 +1114,7 @@ export default function Home() {
                     <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
                   </svg>
                 </button>
-              </div>
+              </form>
             </div>
           </div>
         </aside>
@@ -900,7 +1170,7 @@ export default function Home() {
       {/* Bottom status bar */}
       <footer className="flex h-6 shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--status-bar)] px-4 text-xs text-[#8b949e]">
         <div className="flex items-center gap-4">
-          <span>Ready</span>
+          <span>{saving ? "Saving..." : indexing ? "Indexing..." : projectId ? "Saved" : "Unsaved"}</span>
           <span>{language}</span>
         </div>
         <div className="flex items-center gap-4">
