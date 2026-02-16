@@ -5,6 +5,9 @@ import Editor, { DiffEditor, type OnMount } from "@monaco-editor/react";
 import type * as MonacoEditor from "monaco-editor";
 import { getSupabase } from "@/lib/supabase";
 import ChatMarkdown from "@/components/ChatMarkdown";
+import dynamic from "next/dynamic";
+
+const Terminal = dynamic(() => import("@/components/Terminal"), { ssr: false });
 
 type ProjectRow = {
   id: string;
@@ -238,6 +241,9 @@ function FileTreeItem({
 export default function Home() {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalHeight, setTerminalHeight] = useState(200);
+  const resizingTerminal = useRef(false);
   const [selectedPath, setSelectedPath] = useState("");
   const [currentFileName, setCurrentFileName] = useState("");
   const [language, setLanguage] = useState("plaintext");
@@ -767,6 +773,29 @@ export default function Home() {
     return () => document.removeEventListener("click", handler);
   }, [showProjectMenu]);
 
+  // Terminal resize handlers
+  const handleTerminalResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizingTerminal.current = true;
+    const startY = e.clientY;
+    const startHeight = terminalHeight;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!resizingTerminal.current) return;
+      const delta = startY - ev.clientY;
+      setTerminalHeight(Math.max(100, Math.min(600, startHeight + delta)));
+    };
+
+    const onMouseUp = () => {
+      resizingTerminal.current = false;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [terminalHeight]);
+
   return (
     <div
       className="flex h-screen flex-col bg-[var(--background)] text-[var(--foreground)]"
@@ -1171,6 +1200,20 @@ export default function Home() {
               />
             )}
           </div>
+
+          {/* Terminal Panel */}
+          {terminalOpen && (
+            <>
+              {/* Resize handle */}
+              <div
+                className="h-1 shrink-0 cursor-row-resize bg-[var(--border)] hover:bg-[var(--accent)] transition-colors"
+                onMouseDown={handleTerminalResizeStart}
+              />
+              <div className="shrink-0" style={{ height: terminalHeight }}>
+                <Terminal onClose={() => setTerminalOpen(false)} />
+              </div>
+            </>
+          )}
         </main>
 
         {/* Right panel - AI Assistant Chat */}
@@ -1336,6 +1379,25 @@ export default function Home() {
           <span>{language}</span>
         </div>
         <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => setTerminalOpen((v) => !v)}
+            className={`flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)] ${terminalOpen ? "text-[var(--foreground)]" : ""}`}
+            title="Toggle Terminal"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <polyline points="4 17 10 11 4 5" />
+              <line x1="12" y1="19" x2="20" y2="19" />
+            </svg>
+            <span>Terminal</span>
+          </button>
           <span>Ln 5, Col 3</span>
         </div>
       </footer>
