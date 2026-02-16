@@ -127,6 +127,7 @@ function FileTreeItem({
   parentPath,
   selectedPath,
   onSelect,
+  onRename,
   expandedFolders,
   toggleFolder,
 }: {
@@ -135,6 +136,7 @@ function FileTreeItem({
   parentPath: string;
   selectedPath: string;
   onSelect: (path: string, name: string) => void;
+  onRename: (oldPath: string, newName: string) => void;
   expandedFolders: Set<string>;
   toggleFolder: (path: string) => void;
 }) {
@@ -142,17 +144,52 @@ function FileTreeItem({
   const isFolder = node.type === "folder";
   const isExpanded = isFolder && expandedFolders.has(path);
   const isSelected = selectedPath === path;
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(node.name);
+
+  const startRename = () => {
+    setEditValue(node.name);
+    setEditing(true);
+  };
+
+  const commitRename = () => {
+    setEditing(false);
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== node.name) {
+      onRename(path, trimmed);
+    }
+  };
 
   if (node.type === "file") {
     return (
       <button
         type="button"
         onClick={() => onSelect(path, node.name)}
+        onDoubleClick={(e) => {
+          e.preventDefault();
+          startRename();
+        }}
         className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--hover-bg)] ${isSelected ? "bg-[var(--selected-bg)] text-[var(--accent)]" : "text-[#8b949e]"}`}
         style={{ paddingLeft: `${12 + depth * 16}px` }}
       >
-        <FileIcon extension={node.extension} />
-        <span className="truncate">{node.name}</span>
+        <FileIcon extension={editing ? editValue.split(".").pop() : node.extension} />
+        {editing ? (
+          <input
+            type="text"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitRename();
+              if (e.key === "Escape") setEditing(false);
+            }}
+            onClick={(e) => e.stopPropagation()}
+            autoFocus
+            className="min-w-0 flex-1 rounded bg-[var(--editor-bg)] px-1 py-0.5 text-sm text-[var(--foreground)] outline-none ring-1 ring-[var(--accent)]"
+          />
+        ) : (
+          <span className="truncate">{node.name}</span>
+        )}
       </button>
     );
   }
@@ -187,6 +224,7 @@ function FileTreeItem({
               parentPath={path}
               selectedPath={selectedPath}
               onSelect={onSelect}
+              onRename={onRename}
               expandedFolders={expandedFolders}
               toggleFolder={toggleFolder}
             />
@@ -293,6 +331,54 @@ export default function Home() {
       return next;
     });
   };
+
+  // Rename a file in the tree and update fileContents map
+  const renameFile = useCallback(
+    (oldPath: string, newName: string) => {
+      const parts = oldPath.split("/");
+      const parentParts = parts.slice(0, -1);
+      const newPath = parentParts.length > 0
+        ? `${parentParts.join("/")}/${newName}`
+        : newName;
+
+      // Update tree node
+      const updateNode = (nodes: FileNode[], pathParts: string[]): FileNode[] => {
+        const [head, ...rest] = pathParts;
+        return nodes.map((n) => {
+          if (rest.length === 0 && n.name === head) {
+            const ext = newName.includes(".") ? newName.split(".").pop() : undefined;
+            return { ...n, name: newName, extension: ext };
+          }
+          if (n.type === "folder" && n.name === head && rest.length > 0) {
+            return { ...n, children: updateNode(n.children ?? [], rest) };
+          }
+          return n;
+        });
+      };
+      setFileTree((prev) => updateNode(prev, oldPath.split("/")));
+
+      // Update fileContents key
+      setFileContents((prev) => {
+        const next = new Map<string, string>();
+        for (const [key, val] of prev) {
+          if (key === oldPath) {
+            next.set(newPath, val);
+          } else {
+            next.set(key, val);
+          }
+        }
+        return next;
+      });
+
+      // Update selected path if this file is selected
+      if (selectedPath === oldPath) {
+        setSelectedPath(newPath);
+        setCurrentFileName(newName);
+        setLanguage(getLanguageFromFileName(newName));
+      }
+    },
+    [selectedPath],
+  );
 
   // Process uploaded files: replace current project
   const processFiles = useCallback(
@@ -914,6 +1000,7 @@ export default function Home() {
                   parentPath=""
                   selectedPath={selectedPath}
                   onSelect={selectFile}
+                  onRename={renameFile}
                   expandedFolders={expandedFolders}
                   toggleFolder={toggleFolder}
                 />
