@@ -1,80 +1,28 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import Editor, { type OnMount } from "@monaco-editor/react";
+import type * as MonacoEditor from "monaco-editor";
 
-// Syntax highlighting for TSX/JS code — single-pass tokenizer
-function highlightCode(code: string): string {
-  // Escape HTML first
-  const escaped = code
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+// Detect Monaco language ID from file name
+const extToLanguage: Record<string, string> = {
+  js: "javascript",
+  jsx: "javascript",
+  ts: "typescript",
+  tsx: "typescript",
+  py: "python",
+  java: "java",
+  cpp: "cpp",
+  c: "c",
+  json: "json",
+  html: "html",
+  css: "css",
+  md: "markdown",
+};
 
-  const keywords = new Set([
-    "import","export","default","from","const","let","var","function","return",
-    "if","else","for","while","class","extends","new","this","typeof",
-    "instanceof","async","await","try","catch","throw","switch","case",
-    "break","continue","do","in","of","void","delete","yield",
-  ]);
-
-  const builtins = new Set([
-    "true","false","null","undefined","NaN","Infinity","console","window",
-    "document","Promise","Array","Object","String","Number","Boolean","Map",
-    "Set","React","useState","useEffect","useRef","useCallback","useMemo",
-    "useContext","useReducer",
-  ]);
-
-  // Single combined regex — order matters (earlier alternatives take priority)
-  const tokenRegex =
-    /(\/\*[\s\S]*?\*\/)|(\/\/[^\n]*)|(`(?:\\[\s\S]|[^`])*`)|("(?:\\[\s\S]|[^"\\])*")|('(?:\\[\s\S]|[^'\\])*')|(=&gt;)|(&lt;\/?)([\w.]+)|\b(\d+\.?\d*)\b|\b([a-zA-Z_$][\w$]*)\b/g;
-
-  const result = escaped.replace(
-    tokenRegex,
-    (
-      match,
-      blockComment,   // 1
-      lineComment,    // 2
-      templateLit,    // 3
-      doubleStr,      // 4
-      singleStr,      // 5
-      arrow,          // 6
-      jsxBracket,     // 7
-      jsxTag,         // 8
-      num,            // 9
-      word,           // 10
-    ) => {
-      // Comments
-      if (blockComment || lineComment)
-        return `<span style="color:#8b949e">${match}</span>`;
-      // Strings
-      if (templateLit || doubleStr || singleStr)
-        return `<span style="color:#a5d6ff">${match}</span>`;
-      // Arrow =>
-      if (arrow)
-        return `<span style="color:#ff7b72">${match}</span>`;
-      // JSX tags
-      if (jsxBracket && jsxTag)
-        return `<span style="color:#8b949e">${jsxBracket}</span><span style="color:#7ee787">${jsxTag}</span>`;
-      // Numbers
-      if (num)
-        return `<span style="color:#79c0ff">${match}</span>`;
-      // Words: keywords, builtins, or function calls
-      if (word) {
-        if (keywords.has(word))
-          return `<span style="color:#ff7b72">${match}</span>`;
-        if (builtins.has(word))
-          return `<span style="color:#79c0ff">${match}</span>`;
-        // Check if followed by ( — look ahead in the original escaped string
-        const afterIdx = tokenRegex.lastIndex;
-        const rest = escaped.slice(afterIdx);
-        if (/^\s*\(/.test(rest))
-          return `<span style="color:#d2a8ff">${match}</span>`;
-      }
-      return match;
-    },
-  );
-
-  return result;
+function getLanguageFromFileName(fileName: string): string {
+  const ext = fileName.split(".").pop()?.toLowerCase();
+  return (ext && extToLanguage[ext]) || "plaintext";
 }
 
 // File tree node type
@@ -86,10 +34,7 @@ type FileNode = {
 };
 
 // Insert a file into the tree, creating intermediate folders as needed
-function insertIntoTree(
-  tree: FileNode[],
-  pathParts: string[],
-): FileNode[] {
+function insertIntoTree(tree: FileNode[], pathParts: string[]): FileNode[] {
   const [head, ...rest] = pathParts;
   if (rest.length === 0) {
     // Leaf file — add if not already present
@@ -116,22 +61,6 @@ function insertIntoTree(
   ];
 }
 
-// Collect all folder paths in a tree (for auto-expanding)
-function collectFolderPaths(
-  nodes: FileNode[],
-  parentPath: string,
-): string[] {
-  const paths: string[] = [];
-  for (const node of nodes) {
-    if (node.type === "folder") {
-      const p = parentPath ? `${parentPath}/${node.name}` : node.name;
-      paths.push(p);
-      if (node.children) paths.push(...collectFolderPaths(node.children, p));
-    }
-  }
-  return paths;
-}
-
 // Mock file tree
 const initialFileTree: FileNode[] = [
   {
@@ -142,8 +71,8 @@ const initialFileTree: FileNode[] = [
         name: "app",
         type: "folder",
         children: [
-          { name: "page.tsx", type: "file", extension: "tsx" },
-          { name: "layout.tsx", type: "file", extension: "tsx" },
+          { name: "page.ts", type: "file", extension: "ts" },
+          { name: "layout.ts", type: "file", extension: "ts" },
           { name: "globals.css", type: "file", extension: "css" },
         ],
       },
@@ -151,8 +80,8 @@ const initialFileTree: FileNode[] = [
         name: "components",
         type: "folder",
         children: [
-          { name: "Button.tsx", type: "file", extension: "tsx" },
-          { name: "Header.tsx", type: "file", extension: "tsx" },
+          { name: "Button.ts", type: "file", extension: "ts" },
+          { name: "Header.ts", type: "file", extension: "ts" },
         ],
       },
       { name: "index.ts", type: "file", extension: "ts" },
@@ -166,20 +95,17 @@ const initialFileTree: FileNode[] = [
 // Placeholder code for editor
 const placeholderCode = `import { useState } from "react";
 
-function Counter() {
-  const [count, setCount] = useState(0);
+function useCounter(initial: number = 0) {
+  const [count, setCount] = useState(initial);
 
-  return (
-    <div className="counter">
-      <p>Count: {count}</p>
-      <button onClick={() => setCount(count + 1)}>
-        Increment
-      </button>
-    </div>
-  );
+  const increment = () => setCount((c) => c + 1);
+  const decrement = () => setCount((c) => c - 1);
+  const reset = () => setCount(initial);
+
+  return { count, increment, decrement, reset };
 }
 
-export default Counter;
+export default useCounter;
 `;
 
 // Chat message type
@@ -327,46 +253,52 @@ function FileTreeItem({
 export default function Home() {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
-  const [selectedPath, setSelectedPath] = useState("src/app/page.tsx");
-  const [currentFileName, setCurrentFileName] = useState("page.tsx");
-  const [language, setLanguage] = useState("TypeScript");
+  const [selectedPath, setSelectedPath] = useState("src/app/page.ts");
+  const [currentFileName, setCurrentFileName] = useState("page.ts");
+  const [language, setLanguage] = useState("typescript");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
     new Set(["src", "src/app", "src/components"]),
   );
   const [fileTree, setFileTree] = useState<FileNode[]>(initialFileTree);
   const [fileContents, setFileContents] = useState<Map<string, string>>(
-    () => new Map([["src/app/page.tsx", placeholderCode]]),
+    () => new Map([["src/app/page.ts", placeholderCode]]),
   );
   const [code, setCode] = useState(placeholderCode);
   const [chatMessages] = useState<ChatMessage[]>(initialChatMessages);
   const [dragging, setDragging] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const highlightRef = useRef<HTMLPreElement>(null);
-  const editorContainerRef = useRef<HTMLDivElement>(null);
+  const monacoEditorRef =
+    useRef<MonacoEditor.editor.IStandaloneCodeEditor | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
 
-  const handleEditorScroll = useCallback(() => {
-    const highlight = highlightRef.current;
-    const textarea = textareaRef.current;
-    if (highlight) {
-      highlight.scrollLeft = textarea?.scrollLeft ?? 0;
-    }
-  }, []);
+  const handleEditorMount: OnMount = (editor, monaco) => {
+    monacoEditorRef.current = editor;
 
-  const getLang = (ext: string | undefined) =>
-    ext === "tsx" || ext === "ts"
-      ? "TypeScript"
-      : ext === "jsx" || ext === "js"
-        ? "JavaScript"
-        : ext === "css"
-          ? "CSS"
-          : ext === "json"
-            ? "JSON"
-            : ext === "html"
-              ? "HTML"
-              : "Plain Text";
+    // Enable JSX and disable semantic validation (no tsconfig or types available)
+    const ts = monaco.languages.typescript;
+    const compilerOptions = {
+      jsx: ts.JsxEmit.React,
+      allowJs: true,
+      allowNonTsExtensions: true,
+      target: ts.ScriptTarget.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeJs,
+    };
+    ts.typescriptDefaults.setCompilerOptions(compilerOptions);
+    ts.javascriptDefaults.setCompilerOptions(compilerOptions);
+    ts.typescriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: false,
+    });
+    ts.javascriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: false,
+    });
+  };
+
+  const handleFormat = () => {
+    monacoEditorRef.current?.getAction("editor.action.formatDocument")?.run();
+  };
 
   const toggleFolder = (path: string) => {
     setExpandedFolders((prev) => {
@@ -386,8 +318,7 @@ export default function Home() {
     });
     setSelectedPath(path);
     setCurrentFileName(name);
-    const ext = name.split(".").pop();
-    setLanguage(getLang(ext));
+    setLanguage(getLanguageFromFileName(name));
     setCode(fileContents.get(path) ?? "");
   };
 
@@ -433,7 +364,7 @@ export default function Home() {
       const name = first.path.split("/").pop() ?? first.path;
       setSelectedPath(first.path);
       setCurrentFileName(name);
-      setLanguage(getLang(name.split(".").pop()));
+      setLanguage(getLanguageFromFileName(name));
       setCode(first.content);
     },
     [],
@@ -453,9 +384,10 @@ export default function Home() {
           )
         )
           continue;
-        const path = useRelativePath && file.webkitRelativePath
-          ? file.webkitRelativePath
-          : file.name;
+        const path =
+          useRelativePath && file.webkitRelativePath
+            ? file.webkitRelativePath
+            : file.name;
         pending.push(
           new Promise((resolve) => {
             const reader = new FileReader();
@@ -502,9 +434,7 @@ export default function Home() {
         return new Promise((resolve) => {
           const dirReader = (entry as FileSystemDirectoryEntry).createReader();
           dirReader.readEntries(async (entries) => {
-            const dirPath = basePath
-              ? `${basePath}/${entry.name}`
-              : entry.name;
+            const dirPath = basePath ? `${basePath}/${entry.name}` : entry.name;
             const results = await Promise.all(
               entries.map((e) => readEntry(e, dirPath)),
             );
@@ -643,7 +573,14 @@ export default function Home() {
                 aria-label="Upload files"
                 title="Upload files"
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                   <polyline points="14 2 14 8 20 8" />
                   <line x1="12" y1="18" x2="12" y2="12" />
@@ -659,7 +596,14 @@ export default function Home() {
                 aria-label="Upload folder"
                 title="Upload folder"
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                   <line x1="12" y1="17" x2="12" y2="11" />
                   <line x1="9" y1="14" x2="12" y2="11" />
@@ -672,7 +616,14 @@ export default function Home() {
                 className="rounded p-1 text-[#8b949e] hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)] lg:hidden"
                 aria-label="Close sidebar"
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <path d="M15 18l-6-6 6-6" />
                 </svg>
               </button>
@@ -696,7 +647,10 @@ export default function Home() {
                 if (e.target.files) readFileList(e.target.files, true);
                 e.target.value = "";
               }}
-              {...({ webkitdirectory: "", directory: "" } as React.InputHTMLAttributes<HTMLInputElement>)}
+              {...({
+                webkitdirectory: "",
+                directory: "",
+              } as React.InputHTMLAttributes<HTMLInputElement>)}
             />
           </div>
           <div className="flex flex-1 flex-col overflow-hidden">
@@ -761,6 +715,7 @@ export default function Home() {
               </button>
               <button
                 type="button"
+                onClick={handleFormat}
                 className="rounded px-2 py-1 text-xs text-[#8b949e] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
               >
                 Format
@@ -774,41 +729,24 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Editor content — single scroll container */}
-          <div
-            ref={editorContainerRef}
-            className="relative flex-1 min-h-0 overflow-auto bg-[var(--editor-bg)]"
-          >
-            <div className="flex min-h-full font-mono text-sm">
-              {/* Line numbers */}
-              <div className="sticky left-0 z-10 shrink-0 border-r border-[var(--border)] bg-[var(--sidebar-bg)] py-4 pl-4 pr-4 text-right text-[#8b949e] select-none">
-                {code.split("\n").map((_, i) => (
-                  <div key={i} className="leading-6">
-                    {i + 1}
-                  </div>
-                ))}
-              </div>
-              {/* Code area with syntax highlighting overlay */}
-              <div className="relative flex-1 min-w-0">
-                {/* Highlighted layer (behind) — sized by content, not absolute */}
-                <pre
-                  ref={highlightRef}
-                  aria-hidden="true"
-                  className="pointer-events-none whitespace-pre py-4 pl-4 pr-6 font-mono text-sm leading-6 text-[#e6edf3]"
-                  dangerouslySetInnerHTML={{
-                    __html: highlightCode(code) + "\n",
-                  }}
-                />
-                {/* Transparent textarea (on top, covers the pre exactly) */}
-                <textarea
-                  ref={textareaRef}
-                  value={code}
-                  onChange={(e) => handleCodeChange(e.target.value)}
-                  spellCheck={false}
-                  className="absolute inset-0 z-[1] block w-full h-full resize-none overflow-hidden bg-transparent py-4 pl-4 pr-6 font-mono text-sm leading-6 text-transparent caret-[var(--accent)] focus:outline-none"
-                />
-              </div>
-            </div>
+          {/* Monaco Editor */}
+          <div className="flex-1 min-h-0">
+            <Editor
+              theme="vs-dark"
+              language={language}
+              path={selectedPath}
+              value={code}
+              onChange={(value) => handleCodeChange(value ?? "")}
+              onMount={handleEditorMount}
+              options={{
+                fontSize: 14,
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                padding: { top: 16 },
+                lineNumbersMinChars: 4,
+                automaticLayout: true,
+              }}
+            />
           </div>
         </main>
 
@@ -936,13 +874,25 @@ export default function Home() {
       {dragging && (
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="rounded-2xl border-2 border-dashed border-[var(--accent)] bg-[var(--sidebar-bg)] px-12 py-8 text-center">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto mb-3 text-[var(--accent)]">
+            <svg
+              width="48"
+              height="48"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              className="mx-auto mb-3 text-[var(--accent)]"
+            >
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="17 8 12 3 7 8" />
               <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
-            <p className="text-lg font-medium text-[var(--foreground)]">Drop files or folders here</p>
-            <p className="mt-1 text-sm text-[#8b949e]">Files will be added to the explorer</p>
+            <p className="text-lg font-medium text-[var(--foreground)]">
+              Drop files or folders here
+            </p>
+            <p className="mt-1 text-sm text-[#8b949e]">
+              Files will be added to the explorer
+            </p>
           </div>
         </div>
       )}
