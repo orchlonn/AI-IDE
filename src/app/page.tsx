@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import Editor, { type OnMount } from "@monaco-editor/react";
+import Editor, { DiffEditor, type OnMount } from "@monaco-editor/react";
 import type * as MonacoEditor from "monaco-editor";
 import { getSupabase } from "@/lib/supabase";
+import ChatMarkdown from "@/components/ChatMarkdown";
 
 type ProjectRow = {
   id: string;
@@ -261,6 +262,11 @@ export default function Home() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [indexing, setIndexing] = useState(false);
+  const [diffMode, setDiffMode] = useState<{
+    original: string;
+    modified: string;
+    language: string;
+  } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -680,6 +686,30 @@ export default function Home() {
     setChatLoading(false);
   }, [chatInput, projectId, chatLoading]);
 
+  // Review AI-suggested code in diff view
+  const handleReviewCode = useCallback(
+    (suggestedCode: string) => {
+      setDiffMode({
+        original: code,
+        modified: suggestedCode,
+        language,
+      });
+    },
+    [code, language],
+  );
+
+  // Accept diff: apply modified code to editor
+  const acceptDiff = useCallback(() => {
+    if (!diffMode) return;
+    handleCodeChange(diffMode.modified);
+    setDiffMode(null);
+  }, [diffMode, handleCodeChange]);
+
+  // Reject diff: go back to original
+  const rejectDiff = useCallback(() => {
+    setDiffMode(null);
+  }, []);
+
   // Auto-scroll chat to bottom
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -970,48 +1000,86 @@ export default function Home() {
               <span className="rounded bg-[var(--hover-bg)] px-2 py-0.5 text-xs text-[#8b949e]">
                 {language}
               </span>
+              {diffMode && (
+                <span className="rounded bg-[var(--accent-muted)] px-2 py-0.5 text-xs text-[var(--accent)]">
+                  Review Changes
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1">
-              <button
-                type="button"
-                className="rounded px-2 py-1 text-xs text-[#8b949e] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={handleFormat}
-                className="rounded px-2 py-1 text-xs text-[#8b949e] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
-              >
-                Format
-              </button>
-              <button
-                type="button"
-                className="rounded px-2 py-1 text-xs text-[#8b949e] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
-              >
-                Diff
-              </button>
+              {diffMode ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={acceptDiff}
+                    className="rounded bg-green-600 px-3 py-1 text-xs text-white transition-colors hover:bg-green-500"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    type="button"
+                    onClick={rejectDiff}
+                    className="rounded bg-red-600 px-3 py-1 text-xs text-white transition-colors hover:bg-red-500"
+                  >
+                    Reject
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="rounded px-2 py-1 text-xs text-[#8b949e] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleFormat}
+                    className="rounded px-2 py-1 text-xs text-[#8b949e] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+                  >
+                    Format
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
-          {/* Monaco Editor */}
+          {/* Monaco Editor / Diff Editor */}
           <div className="flex-1 min-h-0">
-            <Editor
-              theme="vs-dark"
-              language={language}
-              path={selectedPath}
-              value={code}
-              onChange={(value) => handleCodeChange(value ?? "")}
-              onMount={handleEditorMount}
-              options={{
-                fontSize: 14,
-                minimap: { enabled: false },
-                scrollBeyondLastLine: false,
-                padding: { top: 16 },
-                lineNumbersMinChars: 4,
-                automaticLayout: true,
-              }}
-            />
+            {diffMode ? (
+              <DiffEditor
+                theme="vs-dark"
+                language={diffMode.language}
+                original={diffMode.original}
+                modified={diffMode.modified}
+                options={{
+                  fontSize: 14,
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  padding: { top: 16 },
+                  readOnly: true,
+                  renderSideBySide: true,
+                  automaticLayout: true,
+                }}
+              />
+            ) : (
+              <Editor
+                theme="vs-dark"
+                language={language}
+                path={selectedPath}
+                value={code}
+                onChange={(value) => handleCodeChange(value ?? "")}
+                onMount={handleEditorMount}
+                options={{
+                  fontSize: 14,
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  padding: { top: 16 },
+                  lineNumbersMinChars: 4,
+                  automaticLayout: true,
+                }}
+              />
+            )}
           </div>
         </main>
 
@@ -1064,7 +1132,11 @@ export default function Home() {
                         : "bg-[var(--chat-ai-bg)] text-[#e6edf3] rounded-bl-md"
                     }`}
                   >
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                    {msg.role === "ai" ? (
+                      <ChatMarkdown content={msg.content} onReviewCode={handleReviewCode} />
+                    ) : (
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                    )}
                   </div>
                 </div>
               ))}

@@ -1,0 +1,143 @@
+"use client";
+
+import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+
+type Props = {
+  content: string;
+  onReviewCode?: (code: string) => void;
+};
+
+export default function ChatMarkdown({ content, onReviewCode }: Props) {
+  return (
+    <div className="chat-markdown text-sm leading-relaxed">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          code({ className, children, ...props }) {
+            const match = /language-(\w+)/.exec(className || "");
+            const codeString = String(children).replace(/\n$/, "");
+
+            if (match) {
+              return (
+                <CodeBlock
+                  code={codeString}
+                  language={match[1]}
+                  onReview={onReviewCode}
+                />
+              );
+            }
+
+            return (
+              <code
+                className="rounded bg-[var(--code-block-bg)] px-1.5 py-0.5 text-xs font-mono text-[var(--accent)]"
+                {...props}
+              >
+                {children}
+              </code>
+            );
+          },
+          p({ children }) {
+            return <p className="mb-2 last:mb-0">{children}</p>;
+          },
+          ul({ children }) {
+            return <ul className="mb-2 ml-4 list-disc space-y-1">{children}</ul>;
+          },
+          ol({ children }) {
+            return (
+              <ol className="mb-2 ml-4 list-decimal space-y-1">{children}</ol>
+            );
+          },
+          li({ children }) {
+            return <li>{children}</li>;
+          },
+          strong({ children }) {
+            return <strong className="font-semibold">{children}</strong>;
+          },
+          a({ href, children }) {
+            return (
+              <a
+                href={href}
+                className="text-[var(--accent)] underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {children}
+              </a>
+            );
+          },
+          h1({ children }) {
+            return <h1 className="mb-2 text-base font-bold">{children}</h1>;
+          },
+          h2({ children }) {
+            return <h2 className="mb-2 text-sm font-bold">{children}</h2>;
+          },
+          h3({ children }) {
+            return <h3 className="mb-1 text-sm font-semibold">{children}</h3>;
+          },
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function CodeBlock({
+  code,
+  language,
+  onReview,
+}: {
+  code: string;
+  language: string;
+  onReview?: (code: string) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="my-2 overflow-hidden rounded-lg border border-[var(--border)]">
+      <div className="flex items-center justify-between bg-[var(--sidebar-bg)] px-3 py-1.5">
+        <span className="text-xs text-[#8b949e]">{language}</span>
+        <div className="flex items-center gap-1">
+          {onReview && (
+            <button
+              type="button"
+              onClick={() => onReview(code)}
+              className="rounded px-2 py-0.5 text-xs text-[var(--accent)] transition-colors hover:bg-[var(--hover-bg)]"
+            >
+              Review Changes
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="rounded px-2 py-0.5 text-xs text-[#8b949e] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+          >
+            {copied ? "Copied!" : "Copy"}
+          </button>
+        </div>
+      </div>
+      <SyntaxHighlighter
+        language={language}
+        style={oneDark}
+        customStyle={{
+          margin: 0,
+          borderRadius: 0,
+          fontSize: "12px",
+          background: "var(--code-block-bg)",
+        }}
+      >
+        {code}
+      </SyntaxHighlighter>
+    </div>
+  );
+}

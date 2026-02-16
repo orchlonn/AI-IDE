@@ -53,3 +53,16 @@ pre {
   tab-size: 2;
   -moz-tab-size: 2;
 }
+
+/* Chat markdown prose styles */
+.chat-markdown pre {
+  margin: 0;
+}
+
+.chat-markdown > *:first-child {
+  margin-top: 0;
+}
+
+.chat-markdown > *:last-child {
+  margin-bottom: 0;
+}
