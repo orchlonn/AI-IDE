@@ -7,6 +7,8 @@ import { getSupabase } from "@/lib/supabase";
 import ChatMarkdown from "@/components/ChatMarkdown";
 import dynamic from "next/dynamic";
 
+import type { TerminalHandle } from "@/components/Terminal";
+
 const Terminal = dynamic(() => import("@/components/Terminal"), { ssr: false });
 
 type ProjectRow = {
@@ -243,7 +245,10 @@ export default function Home() {
   const [rightOpen, setRightOpen] = useState(true);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalHeight, setTerminalHeight] = useState(200);
+  const [pendingRunCommand, setPendingRunCommand] = useState<string | null>(null);
+  const [pendingRunFile, setPendingRunFile] = useState<{ name: string; content: string } | null>(null);
   const resizingTerminal = useRef(false);
+  const terminalRef = useRef<TerminalHandle>(null);
   const [selectedPath, setSelectedPath] = useState("");
   const [currentFileName, setCurrentFileName] = useState("");
   const [language, setLanguage] = useState("plaintext");
@@ -306,6 +311,40 @@ export default function Home() {
   const handleFormat = () => {
     monacoEditorRef.current?.getAction("editor.action.formatDocument")?.run();
   };
+
+  // Map language to run command
+  const getRunCommand = useCallback((fileName: string, lang: string): string | null => {
+    const cmds: Record<string, string> = {
+      python: `python3 "${fileName}"`,
+      javascript: `node "${fileName}"`,
+      typescript: `npx tsx "${fileName}"`,
+      java: `javac "${fileName}" && java "${fileName.replace(/\.java$/, "")}"`,
+      c: `gcc "${fileName}" -o /tmp/a.out && /tmp/a.out`,
+      cpp: `g++ "${fileName}" -o /tmp/a.out && /tmp/a.out`,
+      go: `go run "${fileName}"`,
+      ruby: `ruby "${fileName}"`,
+      php: `php "${fileName}"`,
+      rust: `rustc "${fileName}" -o /tmp/a.out && /tmp/a.out`,
+      shell: `bash "${fileName}"`,
+    };
+    return cmds[lang] ?? null;
+  }, []);
+
+  const handleRunFile = useCallback(() => {
+    if (!currentFileName) return;
+    const cmd = getRunCommand(currentFileName, language);
+    if (!cmd) return;
+
+    const fileInfo = { name: currentFileName, content: code };
+
+    if (terminalOpen && terminalRef.current) {
+      terminalRef.current.runCommand(cmd, fileInfo);
+    } else {
+      setPendingRunCommand(cmd);
+      setPendingRunFile(fileInfo);
+      setTerminalOpen(true);
+    }
+  }, [currentFileName, language, terminalOpen, getRunCommand, code]);
 
   const toggleFolder = (path: string) => {
     setExpandedFolders((prev) => {
@@ -1108,6 +1147,25 @@ export default function Home() {
                   >
                     Format
                   </button>
+                  {getRunCommand(currentFileName, language) && (
+                    <button
+                      type="button"
+                      onClick={handleRunFile}
+                      className="flex items-center gap-1 rounded bg-[#238636] px-2.5 py-1 text-xs text-white transition-colors hover:bg-[#2ea043]"
+                      title="Run file"
+                    >
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        stroke="none"
+                      >
+                        <polygon points="5 3 19 12 5 21 5 3" />
+                      </svg>
+                      Run
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -1210,7 +1268,12 @@ export default function Home() {
                 onMouseDown={handleTerminalResizeStart}
               />
               <div className="shrink-0" style={{ height: terminalHeight }}>
-                <Terminal onClose={() => setTerminalOpen(false)} />
+                <Terminal
+                  ref={terminalRef}
+                  onClose={() => setTerminalOpen(false)}
+                  initialCommand={pendingRunCommand}
+                  initialFile={pendingRunFile}
+                />
               </div>
             </>
           )}

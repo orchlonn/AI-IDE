@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from "react";
 
 interface TerminalLine {
   id: number;
@@ -8,11 +8,22 @@ interface TerminalLine {
   content: string;
 }
 
-interface TerminalProps {
-  onClose: () => void;
+interface FileInfo {
+  name: string;
+  content: string;
 }
 
-export default function Terminal({ onClose }: TerminalProps) {
+interface TerminalProps {
+  onClose: () => void;
+  initialCommand?: string | null;
+  initialFile?: FileInfo | null;
+}
+
+export interface TerminalHandle {
+  runCommand: (cmd: string, file?: FileInfo) => void;
+}
+
+const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ onClose, initialCommand, initialFile }, ref) {
   const [lines, setLines] = useState<TerminalLine[]>([
     { id: 0, type: "output", content: "Terminal ready.\n" },
   ]);
@@ -35,6 +46,15 @@ export default function Terminal({ onClose }: TerminalProps) {
     inputRef.current?.focus();
   }, [running]);
 
+  // Handle initial command from Run button
+  const initialRan = useRef(false);
+  useEffect(() => {
+    if (initialCommand && !initialRan.current && !running) {
+      initialRan.current = true;
+      setTimeout(() => runCommand(initialCommand, initialFile ?? undefined), 100);
+    }
+  }, [initialCommand, initialFile, running]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const addLine = useCallback(
     (type: TerminalLine["type"], content: string) => {
       const id = nextId.current++;
@@ -44,7 +64,7 @@ export default function Terminal({ onClose }: TerminalProps) {
   );
 
   const runCommand = useCallback(
-    async (cmd: string) => {
+    async (cmd: string, file?: FileInfo) => {
       const trimmed = cmd.trim();
       if (!trimmed) return;
 
@@ -57,7 +77,6 @@ export default function Terminal({ onClose }: TerminalProps) {
       // Handle cd locally
       if (/^cd\s/.test(trimmed) || trimmed === "cd") {
         const target = trimmed.replace(/^cd\s*/, "").trim() || "~";
-        // Resolve the cd on the server by running pwd after cd
         try {
           const res = await fetch("/api/terminal", {
             method: "POST",
@@ -88,13 +107,17 @@ export default function Terminal({ onClose }: TerminalProps) {
       }
 
       try {
+        const body: Record<string, unknown> = {
+          command: trimmed,
+          cwd: cwd === "~" ? undefined : cwd,
+        };
+        if (file) {
+          body.file = file;
+        }
         const res = await fetch("/api/terminal", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            command: trimmed,
-            cwd: cwd === "~" ? undefined : cwd,
-          }),
+          body: JSON.stringify(body),
         });
 
         if (!res.ok || !res.body) {
@@ -133,6 +156,8 @@ export default function Terminal({ onClose }: TerminalProps) {
     },
     [cwd, addLine]
   );
+
+  useImperativeHandle(ref, () => ({ runCommand }), [runCommand]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
@@ -277,4 +302,6 @@ export default function Terminal({ onClose }: TerminalProps) {
       </div>
     </div>
   );
-}
+});
+
+export default Terminal;
