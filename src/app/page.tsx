@@ -71,53 +71,6 @@ function insertIntoTree(tree: FileNode[], pathParts: string[]): FileNode[] {
   ];
 }
 
-// Mock file tree
-const initialFileTree: FileNode[] = [
-  {
-    name: "src",
-    type: "folder",
-    children: [
-      {
-        name: "app",
-        type: "folder",
-        children: [
-          { name: "page.ts", type: "file", extension: "ts" },
-          { name: "layout.ts", type: "file", extension: "ts" },
-          { name: "globals.css", type: "file", extension: "css" },
-        ],
-      },
-      {
-        name: "components",
-        type: "folder",
-        children: [
-          { name: "Button.ts", type: "file", extension: "ts" },
-          { name: "Header.ts", type: "file", extension: "ts" },
-        ],
-      },
-      { name: "index.ts", type: "file", extension: "ts" },
-    ],
-  },
-  { name: "package.json", type: "file", extension: "json" },
-  { name: "tsconfig.json", type: "file", extension: "json" },
-  { name: "README.md", type: "file", extension: "md" },
-];
-
-// Placeholder code for editor
-const placeholderCode = `import { useState } from "react";
-
-function useCounter(initial: number = 0) {
-  const [count, setCount] = useState(initial);
-
-  const increment = () => setCount((c) => c + 1);
-  const decrement = () => setCount((c) => c - 1);
-  const reset = () => setCount(initial);
-
-  return { count, increment, decrement, reset };
-}
-
-export default useCounter;
-`;
-
 // Chat message type
 type ChatMessage = {
   id: string;
@@ -247,17 +200,17 @@ function FileTreeItem({
 export default function Home() {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
-  const [selectedPath, setSelectedPath] = useState("src/app/page.ts");
-  const [currentFileName, setCurrentFileName] = useState("page.ts");
-  const [language, setLanguage] = useState("typescript");
+  const [selectedPath, setSelectedPath] = useState("");
+  const [currentFileName, setCurrentFileName] = useState("");
+  const [language, setLanguage] = useState("plaintext");
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
-    new Set(["src", "src/app", "src/components"]),
+    new Set(),
   );
-  const [fileTree, setFileTree] = useState<FileNode[]>(initialFileTree);
+  const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [fileContents, setFileContents] = useState<Map<string, string>>(
-    () => new Map([["src/app/page.ts", placeholderCode]]),
+    () => new Map(),
   );
-  const [code, setCode] = useState(placeholderCode);
+  const [code, setCode] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
@@ -1044,9 +997,59 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Monaco Editor / Diff Editor */}
+          {/* Monaco Editor / Diff Editor / Welcome */}
           <div className="flex-1 min-h-0">
-            {diffMode ? (
+            {fileTree.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center text-center">
+                <svg
+                  width="64"
+                  height="64"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1"
+                  className="mb-6 text-[#30363d]"
+                >
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="12" y1="18" x2="12" y2="12" />
+                  <line x1="9" y1="15" x2="12" y2="12" />
+                  <line x1="15" y1="15" x2="12" y2="12" />
+                </svg>
+                <h2 className="mb-2 text-xl font-semibold text-[var(--foreground)]">
+                  No project open
+                </h2>
+                <p className="mb-6 max-w-sm text-sm text-[#8b949e]">
+                  Upload files or a folder to get started, or load a saved project from the dropdown above.
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--sidebar-bg)] px-4 py-2.5 text-sm text-[var(--foreground)] transition-colors hover:bg-[var(--hover-bg)]"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                    Upload Files
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => folderInputRef.current?.click()}
+                    className="flex items-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm text-white transition-opacity hover:opacity-90"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                    </svg>
+                    Open Folder
+                  </button>
+                </div>
+                <p className="mt-4 text-xs text-[#484f58]">
+                  or drag and drop files anywhere
+                </p>
+              </div>
+            ) : diffMode ? (
               <DiffEditor
                 theme="vs-dark"
                 language={diffMode.language}
