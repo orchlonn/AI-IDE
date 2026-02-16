@@ -37,3 +37,19 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
+
+/* Editor textarea selection styling */
+textarea::selection {
+  background: rgba(56, 139, 253, 0.3);
+  color: transparent;
+}
+
+textarea {
+  tab-size: 2;
+  -moz-tab-size: 2;
+}
+
+pre {
+  tab-size: 2;
+  -moz-tab-size: 2;
+}
