@@ -16,6 +16,7 @@
   --chat-user-bg: #388bfd26;
   --chat-ai-bg: #21262d;
   --code-block-bg: #161b22;
+  --muted: #8b949e;
 }
 
 @theme inline {

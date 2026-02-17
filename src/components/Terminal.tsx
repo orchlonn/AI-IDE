@@ -13,17 +13,34 @@ interface FileInfo {
   content: string;
 }
 
+interface TerminalColors {
+  bg: string;
+  fg: string;
+  inputColor: string;
+  errorColor: string;
+  promptColor: string;
+  mutedColor: string;
+  cursorColor: string;
+}
+
 interface TerminalProps {
   onClose: () => void;
   initialCommand?: string | null;
   initialFile?: FileInfo | null;
+  terminalColors?: TerminalColors;
 }
 
 export interface TerminalHandle {
   runCommand: (cmd: string, file?: FileInfo) => void;
 }
 
-const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ onClose, initialCommand, initialFile }, ref) {
+const defaultColors: TerminalColors = {
+  bg: "#0d1117", fg: "#e6edf3", inputColor: "#58a6ff",
+  errorColor: "#f85149", promptColor: "#3fb950", mutedColor: "#8b949e", cursorColor: "#58a6ff",
+};
+
+const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ onClose, initialCommand, initialFile, terminalColors }, ref) {
+  const tc = terminalColors ?? defaultColors;
   const [lines, setLines] = useState<TerminalLine[]>([
     { id: 0, type: "output", content: "Terminal ready.\n" },
   ]);
@@ -192,7 +209,8 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ o
 
   return (
     <div
-      className="flex h-full flex-col bg-[#0d1117] text-[#e6edf3] font-mono text-sm"
+      className="flex h-full flex-col font-mono text-sm"
+      style={{ background: tc.bg, color: tc.fg }}
       onClick={focusInput}
     >
       {/* Terminal header */}
@@ -205,12 +223,12 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ o
             fill="none"
             stroke="currentColor"
             strokeWidth="2"
-            className="text-[#8b949e]"
+            style={{ color: tc.mutedColor }}
           >
             <polyline points="4 17 10 11 4 5" />
             <line x1="12" y1="19" x2="20" y2="19" />
           </svg>
-          <span className="text-xs font-medium text-[#8b949e]">Terminal</span>
+          <span className="text-xs font-medium" style={{ color: tc.mutedColor }}>Terminal</span>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -219,7 +237,8 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ o
               e.stopPropagation();
               setLines([]);
             }}
-            className="rounded p-1 text-[#8b949e] hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+            className="rounded p-1 hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+            style={{ color: tc.mutedColor }}
             title="Clear terminal"
           >
             <svg
@@ -240,7 +259,8 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ o
               e.stopPropagation();
               onClose();
             }}
-            className="rounded p-1 text-[#8b949e] hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+            className="rounded p-1 hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+            style={{ color: tc.mutedColor }}
             title="Close terminal"
           >
             <svg
@@ -263,13 +283,12 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ o
         {lines.map((line) => (
           <div
             key={line.id}
-            className={`whitespace-pre-wrap break-all leading-5 ${
-              line.type === "input"
-                ? "text-[#58a6ff]"
-                : line.type === "error"
-                  ? "text-[#f85149]"
-                  : "text-[#e6edf3]"
-            }`}
+            className="whitespace-pre-wrap break-all leading-5"
+            style={{
+              color: line.type === "input" ? tc.inputColor
+                : line.type === "error" ? tc.errorColor
+                : tc.fg,
+            }}
           >
             {line.content}
           </div>
@@ -278,16 +297,17 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ o
         {/* Input line */}
         {!running && (
           <div className="flex items-center leading-5">
-            <span className="text-[#3fb950] shrink-0">
+            <span className="shrink-0" style={{ color: tc.promptColor }}>
               {cwd}
             </span>
-            <span className="text-[#8b949e] mx-1 shrink-0">$</span>
+            <span className="mx-1 shrink-0" style={{ color: tc.mutedColor }}>$</span>
             <input
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="flex-1 bg-transparent outline-none text-[#e6edf3] caret-[#58a6ff]"
+              className="flex-1 bg-transparent outline-none"
+              style={{ color: tc.fg, caretColor: tc.cursorColor }}
               spellCheck={false}
               autoComplete="off"
             />
@@ -295,7 +315,7 @@ const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Terminal({ o
         )}
 
         {running && (
-          <div className="flex items-center gap-2 leading-5 text-[#8b949e]">
+          <div className="flex items-center gap-2 leading-5" style={{ color: tc.mutedColor }}>
             <span className="animate-pulse">Running...</span>
           </div>
         )}

@@ -4,7 +4,9 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import Editor, { DiffEditor, type OnMount } from "@monaco-editor/react";
 import type * as MonacoEditor from "monaco-editor";
 import { getSupabase } from "@/lib/supabase";
+import { useTheme } from "@/lib/useTheme";
 import ChatMarkdown from "@/components/ChatMarkdown";
+import SettingsModal from "@/components/SettingsModal";
 import dynamic from "next/dynamic";
 
 import type { TerminalHandle } from "@/components/Terminal";
@@ -241,6 +243,8 @@ function FileTreeItem({
 }
 
 export default function Home() {
+  const { themeId, currentTheme, selectTheme, allThemes } = useTheme();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [terminalOpen, setTerminalOpen] = useState(false);
@@ -947,7 +951,8 @@ export default function Home() {
           </button>
           <button
             type="button"
-            className="rounded-md p-2 text-[#8b949e] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+            onClick={() => setSettingsOpen(true)}
+            className="rounded-md p-2 text-[var(--muted,#8b949e)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
             aria-label="Settings"
           >
           <svg
@@ -1233,7 +1238,7 @@ export default function Home() {
               </div>
             ) : diffMode ? (
               <DiffEditor
-                theme="vs-dark"
+                theme={currentTheme.monacoTheme}
                 language={diffMode.language}
                 original={diffMode.original}
                 modified={diffMode.modified}
@@ -1249,7 +1254,7 @@ export default function Home() {
               />
             ) : (
               <Editor
-                theme="vs-dark"
+                theme={currentTheme.monacoTheme}
                 language={language}
                 path={selectedPath}
                 value={code}
@@ -1281,6 +1286,7 @@ export default function Home() {
                   onClose={() => setTerminalOpen(false)}
                   initialCommand={pendingRunCommand}
                   initialFile={pendingRunFile}
+                  terminalColors={currentTheme.terminal}
                 />
               </div>
             </>
@@ -1472,6 +1478,14 @@ export default function Home() {
           <span>Ln 5, Col 3</span>
         </div>
       </footer>
+
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        themeId={themeId}
+        onSelectTheme={selectTheme}
+        allThemes={allThemes}
+      />
     </div>
   );
 }
