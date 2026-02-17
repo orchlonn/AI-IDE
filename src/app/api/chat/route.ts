@@ -4,7 +4,7 @@ import { getOpenAI } from "@/lib/openai";
 
 export async function POST(req: NextRequest) {
   try {
-    const { project_id, question } = await req.json();
+    const { project_id, question, history, current_file } = await req.json();
     if (!project_id || !question) {
       return new Response(
         JSON.stringify({ error: "Missing project_id or question" }),
@@ -48,23 +48,40 @@ export async function POST(req: NextRequest) {
       )
       .join("\n\n---\n\n");
 
+    // Build system prompt with code context and current file
+    let systemContent = `You are a helpful coding assistant. Answer the user's question based on the code context provided below. If the context doesn't contain relevant information, say so honestly.`;
+
+    if (current_file?.path && current_file?.content) {
+      systemContent += `\n\n## Currently Open File: ${current_file.path}\n${current_file.content}`;
+    }
+
+    if (context) {
+      systemContent += `\n\n## Related Code Context\n${context}`;
+    }
+
+    // Build messages with conversation history
+    const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+      { role: "system", content: systemContent },
+    ];
+
+    // Add conversation history (limit to last 20 messages to stay within token limits)
+    if (Array.isArray(history)) {
+      const recentHistory = history.slice(-20);
+      for (const msg of recentHistory) {
+        if (msg.role === "user" || msg.role === "assistant") {
+          messages.push({ role: msg.role, content: msg.content });
+        }
+      }
+    }
+
+    // Add current question
+    messages.push({ role: "user", content: question });
+
     // Stream response from OpenAI
     const stream = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       stream: true,
-      messages: [
-        {
-          role: "system",
-          content: `You are a helpful coding assistant. Answer the user's question based on the code context provided below. If the context doesn't contain relevant information, say so honestly.
-
-## Code Context
-${context}`,
-        },
-        {
-          role: "user",
-          content: question,
-        },
-      ],
+      messages,
     });
 
     // Convert OpenAI stream to ReadableStream

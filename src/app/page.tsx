@@ -728,7 +728,15 @@ export default function Home() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: projectId, question }),
+        body: JSON.stringify({
+          project_id: projectId,
+          question,
+          history: chatMessages.map((m) => ({
+            role: m.role === "ai" ? "assistant" : "user",
+            content: m.content,
+          })),
+          current_file: selectedPath ? { path: selectedPath, content: code } : null,
+        }),
       });
 
       if (!res.ok) {
@@ -768,7 +776,7 @@ export default function Home() {
       );
     }
     setChatLoading(false);
-  }, [chatInput, projectId, chatLoading]);
+  }, [chatInput, projectId, chatLoading, chatMessages, selectedPath, code]);
 
   // Review AI-suggested code in diff view
   const handleReviewCode = useCallback(
