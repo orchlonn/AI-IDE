@@ -8,10 +8,11 @@ import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 type Props = {
   content: string;
-  onReviewCode?: (code: string) => void;
+  onReviewCode?: (code: string, filePath?: string) => void;
+  onApplyCode?: (code: string, filePath?: string) => void;
 };
 
-export default function ChatMarkdown({ content, onReviewCode }: Props) {
+export default function ChatMarkdown({ content, onReviewCode, onApplyCode }: Props) {
   return (
     <div className="chat-markdown text-sm leading-relaxed">
       <ReactMarkdown
@@ -27,6 +28,7 @@ export default function ChatMarkdown({ content, onReviewCode }: Props) {
                   code={codeString}
                   language={match[1]}
                   onReview={onReviewCode}
+                  onApply={onApplyCode}
                 />
               );
             }
@@ -86,41 +88,70 @@ export default function ChatMarkdown({ content, onReviewCode }: Props) {
   );
 }
 
+function parseFileHint(code: string): { filePath?: string; cleanCode: string } {
+  const match = code.match(/^\/\/\s*file:\s*(.+)\n/);
+  if (match) {
+    return { filePath: match[1].trim(), cleanCode: code.replace(match[0], "") };
+  }
+  return { cleanCode: code };
+}
+
 function CodeBlock({
   code,
   language,
   onReview,
+  onApply,
 }: {
   code: string;
   language: string;
-  onReview?: (code: string) => void;
+  onReview?: (code: string, filePath?: string) => void;
+  onApply?: (code: string, filePath?: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [applied, setApplied] = useState(false);
+  const { filePath, cleanCode } = parseFileHint(code);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(code);
+    navigator.clipboard.writeText(cleanCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleApply = () => {
+    onApply?.(cleanCode, filePath);
+    setApplied(true);
+    setTimeout(() => setApplied(false), 2000);
   };
 
   return (
     <div className="my-2 overflow-hidden rounded-lg border border-[var(--border)]">
       <div className="flex items-center justify-between bg-[var(--sidebar-bg)] px-3 py-1.5">
-        <span className="text-xs text-[#8b949e]">{language}</span>
+        <span className="text-xs text-[var(--muted,#8b949e)]">
+          {filePath ? filePath : language}
+        </span>
         <div className="flex items-center gap-1">
+          {onApply && (
+            <button
+              type="button"
+              onClick={handleApply}
+              className="rounded px-2 py-0.5 text-xs font-medium text-green-400 transition-colors hover:bg-[var(--hover-bg)]"
+            >
+              {applied ? "Applied!" : "Apply"}
+            </button>
+          )}
           {onReview && (
             <button
               type="button"
-              onClick={() => onReview(code)}
+              onClick={() => onReview(cleanCode, filePath)}
               className="rounded px-2 py-0.5 text-xs text-[var(--accent)] transition-colors hover:bg-[var(--hover-bg)]"
             >
-              Review Changes
+              Review
             </button>
           )}
           <button
             type="button"
             onClick={handleCopy}
-            className="rounded px-2 py-0.5 text-xs text-[#8b949e] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+            className="rounded px-2 py-0.5 text-xs text-[var(--muted,#8b949e)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
           >
             {copied ? "Copied!" : "Copy"}
           </button>
@@ -136,7 +167,7 @@ function CodeBlock({
           background: "var(--code-block-bg)",
         }}
       >
-        {code}
+        {cleanCode}
       </SyntaxHighlighter>
     </div>
   );

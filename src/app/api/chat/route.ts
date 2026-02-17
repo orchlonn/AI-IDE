@@ -49,7 +49,13 @@ export async function POST(req: NextRequest) {
       .join("\n\n---\n\n");
 
     // Build system prompt with code context and current file
-    let systemContent = `You are a helpful coding assistant. Answer the user's question based on the code context provided below. If the context doesn't contain relevant information, say so honestly.`;
+    let systemContent = `You are a helpful coding assistant. Answer the user's question based on the code context provided below. If the context doesn't contain relevant information, say so honestly.
+
+When the user asks you to modify, edit, fix, or create code:
+- Always provide the COMPLETE file content in a code block (not just a snippet)
+- Add \`// file: <filepath>\` as the very first line of the code block so the system knows which file to update
+- If modifying the currently open file, use its path
+- If the user asks for changes to a specific file, use that file's path`;
 
     if (current_file?.path && current_file?.content) {
       systemContent += `\n\n## Currently Open File: ${current_file.path}\n${current_file.content}`;

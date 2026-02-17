@@ -854,15 +854,66 @@ export default function Home() {
 
   // Review AI-suggested code in diff view
   const handleReviewCode = useCallback(
-    (suggestedCode: string) => {
+    (suggestedCode: string, filePath?: string) => {
+      const targetPath = filePath || selectedPath;
+      const original = targetPath === selectedPath ? code : (fileContents.get(targetPath) ?? "");
       setDiffMode({
-        original: code,
+        original,
         modified: suggestedCode,
-        language,
+        language: filePath ? getLanguageFromFileName(filePath) : language,
       });
     },
-    [code, language],
+    [code, language, selectedPath, fileContents],
   );
+
+  // Apply AI code directly to a file
+  const lastApplied = useRef<{ path: string; previousContent: string } | null>(null);
+  const handleApplyCode = useCallback(
+    (newCode: string, filePath?: string) => {
+      const targetPath = filePath || selectedPath;
+      if (!targetPath) {
+        showToast("No file to apply to. Open a file first.", "error");
+        return;
+      }
+
+      // Save previous content for undo
+      const previousContent = targetPath === selectedPath ? code : (fileContents.get(targetPath) ?? "");
+      lastApplied.current = { path: targetPath, previousContent };
+
+      if (targetPath === selectedPath) {
+        // Apply to currently open file
+        handleCodeChange(newCode);
+      } else {
+        // Apply to a different file
+        setFileContents((prev) => {
+          const next = new Map(prev);
+          next.set(targetPath, newCode);
+          return next;
+        });
+      }
+
+      const fileName = targetPath.split("/").pop() ?? targetPath;
+      showToast(`Applied to ${fileName}`, "success");
+    },
+    [selectedPath, code, fileContents, handleCodeChange, showToast],
+  );
+
+  // Undo last applied code
+  const undoLastApply = useCallback(() => {
+    if (!lastApplied.current) return;
+    const { path, previousContent } = lastApplied.current;
+    if (path === selectedPath) {
+      handleCodeChange(previousContent);
+    } else {
+      setFileContents((prev) => {
+        const next = new Map(prev);
+        next.set(path, previousContent);
+        return next;
+      });
+    }
+    lastApplied.current = null;
+    showToast("Reverted changes", "success");
+  }, [selectedPath, handleCodeChange, showToast]);
 
   // Accept diff: apply modified code to editor
   const acceptDiff = useCallback(() => {
@@ -1460,7 +1511,7 @@ export default function Home() {
                     }`}
                   >
                     {msg.role === "ai" ? (
-                      <ChatMarkdown content={msg.content} onReviewCode={handleReviewCode} />
+                      <ChatMarkdown content={msg.content} onReviewCode={handleReviewCode} onApplyCode={handleApplyCode} />
                     ) : (
                       <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                     )}
@@ -1622,6 +1673,15 @@ export default function Home() {
             }`}
           >
             <span>{toast.message}</span>
+            {lastApplied.current && toast.message.startsWith("Applied to") && (
+              <button
+                type="button"
+                onClick={() => { undoLastApply(); setToast(null); }}
+                className="ml-2 rounded px-2 py-0.5 text-xs font-medium underline hover:no-underline"
+              >
+                Undo
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setToast(null)}
