@@ -242,9 +242,30 @@ function FileTreeItem({
   );
 }
 
+// ── File filtering constants ──
+const MAX_FILE_SIZE = 512 * 1024; // 512 KB per file
+const MAX_PROJECT_SIZE = 4 * 1024 * 1024; // 4 MB total
+const BINARY_EXTENSIONS =
+  /\.(png|jpg|jpeg|gif|svg|ico|webp|bmp|woff2?|ttf|eot|otf|mp[34]|wav|ogg|webm|avi|mov|zip|tar|gz|bz2|xz|7z|rar|exe|dll|so|dylib|bin|pdf|doc|docx|xls|xlsx|ppt|pptx|db|sqlite|class|jar|pyc|pyo|o|obj|DS_Store)$/i;
+const SKIP_DIRS = /^(node_modules|\.git|\.next|dist|build|out|coverage|\.cache|__pycache__|\.venv|vendor|\.idea|\.vscode)$/;
+const SKIP_FILES = /^(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb|composer\.lock|Gemfile\.lock|Cargo\.lock|\.env\.local|\.env)$/;
+
+function shouldSkipFile(name: string, size: number): boolean {
+  if (size > MAX_FILE_SIZE) return true;
+  if (BINARY_EXTENSIONS.test(name)) return true;
+  if (SKIP_FILES.test(name)) return true;
+  return false;
+}
+
+function shouldSkipDir(name: string): boolean {
+  return SKIP_DIRS.test(name);
+}
+
 export default function Home() {
   const { themeId, currentTheme, selectTheme, allThemes } = useTheme();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "error" | "warning" | "success" } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [leftOpen, setLeftOpen] = useState(true);
   const [leftWidth, setLeftWidth] = useState(256);
   const [rightOpen, setRightOpen] = useState(true);
@@ -291,6 +312,12 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
+
+  const showToast = useCallback((message: string, type: "error" | "warning" | "success" = "error") => {
+    setToast({ message, type });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 5000);
+  }, []);
 
   const handleEditorMount: OnMount = (editor, monaco) => {
     monacoEditorRef.current = editor;
@@ -476,33 +503,45 @@ export default function Home() {
   const readFileList = useCallback(
     (fileList: FileList, useRelativePath: boolean) => {
       const pending: Promise<{ path: string; content: string }>[] = [];
+      let skipped = 0;
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
-        // Skip non-text / binary files
-        if (
-          file.size > 2 * 1024 * 1024 ||
-          file.name.match(
-            /\.(png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|mp[34]|webm|zip|tar|gz|exe|dll|so|dylib|bin|pdf)$/i,
-          )
-        )
-          continue;
-        const path =
+        const filePath =
           useRelativePath && file.webkitRelativePath
             ? file.webkitRelativePath
             : file.name;
+
+        // Skip directories like node_modules
+        const parts = filePath.split("/");
+        if (parts.some((p) => shouldSkipDir(p))) { skipped++; continue; }
+
+        // Skip binary/large files
+        if (shouldSkipFile(file.name, file.size)) { skipped++; continue; }
+
         pending.push(
           new Promise((resolve) => {
             const reader = new FileReader();
             reader.onload = () =>
-              resolve({ path, content: (reader.result as string) ?? "" });
-            reader.onerror = () => resolve({ path, content: "" });
+              resolve({ path: filePath, content: (reader.result as string) ?? "" });
+            reader.onerror = () => resolve({ path: filePath, content: "" });
             reader.readAsText(file);
           }),
         );
       }
-      Promise.all(pending).then(processFiles);
+      Promise.all(pending).then((files) => {
+        // Check total project size
+        const totalSize = files.reduce((sum, f) => sum + f.content.length, 0);
+        if (totalSize > MAX_PROJECT_SIZE) {
+          showToast(`Project too large (${(totalSize / 1024 / 1024).toFixed(1)} MB). Max is ${MAX_PROJECT_SIZE / 1024 / 1024} MB. Try removing large files.`, "error");
+          return;
+        }
+        if (skipped > 0) {
+          showToast(`Skipped ${skipped} file${skipped > 1 ? "s" : ""} (binary, too large, or excluded directories)`, "warning");
+        }
+        processFiles(files);
+      });
     },
-    [processFiles],
+    [processFiles, showToast],
   );
 
   // Recursively read a dropped directory entry
@@ -511,16 +550,15 @@ export default function Home() {
       entry: FileSystemEntry,
       basePath: string,
     ): Promise<{ path: string; content: string }[]> => {
+      // Skip excluded directories
+      if (entry.isDirectory && shouldSkipDir(entry.name)) {
+        return Promise.resolve([]);
+      }
       if (entry.isFile) {
         return new Promise((resolve) => {
           (entry as FileSystemFileEntry).file((file) => {
             const path = basePath ? `${basePath}/${entry.name}` : entry.name;
-            if (
-              file.size > 2 * 1024 * 1024 ||
-              file.name.match(
-                /\.(png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|mp[34]|webm|zip|tar|gz|exe|dll|so|dylib|bin|pdf)$/i,
-              )
-            ) {
+            if (shouldSkipFile(file.name, file.size)) {
               resolve([]);
               return;
             }
@@ -563,9 +601,15 @@ export default function Home() {
           if (entry) entries.push(entry);
         }
         if (entries.length > 0) {
-          Promise.all(entries.map((e) => readEntry(e, ""))).then((results) =>
-            processFiles(results.flat()),
-          );
+          Promise.all(entries.map((e) => readEntry(e, ""))).then((results) => {
+            const files = results.flat();
+            const totalSize = files.reduce((sum, f) => sum + f.content.length, 0);
+            if (totalSize > MAX_PROJECT_SIZE) {
+              showToast(`Project too large (${(totalSize / 1024 / 1024).toFixed(1)} MB). Max is ${MAX_PROJECT_SIZE / 1024 / 1024} MB. Try removing large files.`, "error");
+              return;
+            }
+            processFiles(files);
+          });
           return;
         }
       }
@@ -574,7 +618,7 @@ export default function Home() {
         readFileList(e.dataTransfer.files, false);
       }
     },
-    [readEntry, processFiles, readFileList],
+    [readEntry, processFiles, readFileList, showToast],
   );
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -646,22 +690,36 @@ export default function Home() {
   const indexProject = useCallback(async (id: string) => {
     setIndexing(true);
     try {
-      await fetch("/api/embeddings", {
+      const res = await fetch("/api/embeddings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ project_id: id }),
       });
-    } catch (err) {
-      console.error("Indexing failed:", err);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        showToast(`Indexing failed: ${err.error || "Unknown error"}`, "error");
+      }
+    } catch {
+      showToast("Indexing failed: Could not connect to server", "error");
     }
     setIndexing(false);
-  }, []);
+  }, [showToast]);
 
   // Save current project to Supabase
   const saveProject = useCallback(async () => {
     // Make sure current file is saved to fileContents
     const currentContents = new Map(fileContents);
     currentContents.set(selectedPath, code);
+
+    // Check total project size before saving
+    let totalSize = 0;
+    for (const content of currentContents.values()) {
+      totalSize += content.length;
+    }
+    if (totalSize > MAX_PROJECT_SIZE) {
+      showToast(`Project too large (${(totalSize / 1024 / 1024).toFixed(1)} MB). Max is ${MAX_PROJECT_SIZE / 1024 / 1024} MB. Remove some files and try again.`, "error");
+      return;
+    }
 
     let name = projectName;
     if (!projectId) {
@@ -671,33 +729,41 @@ export default function Home() {
     }
 
     setSaving(true);
-    const payload = {
-      name,
-      file_tree: fileTree,
-      file_contents: Object.fromEntries(currentContents),
-      updated_at: new Date().toISOString(),
-    };
+    try {
+      const payload = {
+        name,
+        file_tree: fileTree,
+        file_contents: Object.fromEntries(currentContents),
+        updated_at: new Date().toISOString(),
+      };
 
-    let savedId = projectId;
-    if (projectId) {
-      await getSupabase().from("projects").update(payload).eq("id", projectId);
-    } else {
-      const { data } = await getSupabase()
-        .from("projects")
-        .insert(payload)
-        .select("id")
-        .single();
-      if (data) {
-        setProjectId(data.id);
-        savedId = data.id;
+      let savedId = projectId;
+      if (projectId) {
+        const { error } = await getSupabase().from("projects").update(payload).eq("id", projectId);
+        if (error) throw new Error(error.message);
+      } else {
+        const { data, error } = await getSupabase()
+          .from("projects")
+          .insert(payload)
+          .select("id")
+          .single();
+        if (error) throw new Error(error.message);
+        if (data) {
+          setProjectId(data.id);
+          savedId = data.id;
+        }
       }
-    }
-    setProjectName(name);
-    setSaving(false);
+      setProjectName(name);
+      showToast("Project saved", "success");
 
-    // Auto-index for AI search
-    if (savedId) indexProject(savedId);
-  }, [fileTree, fileContents, code, selectedPath, projectId, projectName, indexProject]);
+      // Auto-index for AI search
+      if (savedId) indexProject(savedId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      showToast(`Save failed: ${msg}`, "error");
+    }
+    setSaving(false);
+  }, [fileTree, fileContents, code, selectedPath, projectId, projectName, indexProject, showToast]);
 
   // Delete a project
   const deleteProject = useCallback(
@@ -1542,6 +1608,30 @@ export default function Home() {
         onSelectTheme={selectTheme}
         allThemes={allThemes}
       />
+
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 animate-[slideUp_0.2s_ease-out]">
+          <div
+            className={`flex items-center gap-2 rounded-lg border px-4 py-3 text-sm shadow-lg ${
+              toast.type === "error"
+                ? "border-red-500/30 bg-red-500/15 text-red-400"
+                : toast.type === "warning"
+                  ? "border-yellow-500/30 bg-yellow-500/15 text-yellow-400"
+                  : "border-green-500/30 bg-green-500/15 text-green-400"
+            }`}
+          >
+            <span>{toast.message}</span>
+            <button
+              type="button"
+              onClick={() => setToast(null)}
+              className="ml-2 opacity-60 hover:opacity-100"
+            >
+              &times;
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
