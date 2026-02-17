@@ -246,7 +246,11 @@ export default function Home() {
   const { themeId, currentTheme, selectTheme, allThemes } = useTheme();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [leftOpen, setLeftOpen] = useState(true);
+  const [leftWidth, setLeftWidth] = useState(256);
   const [rightOpen, setRightOpen] = useState(true);
+  const [rightWidth, setRightWidth] = useState(384);
+  const resizingLeft = useRef(false);
+  const resizingRight = useRef(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalHeight, setTerminalHeight] = useState(200);
   const [pendingRunCommand, setPendingRunCommand] = useState<string | null>(null);
@@ -824,6 +828,46 @@ export default function Home() {
     return () => document.removeEventListener("click", handler);
   }, [showProjectMenu]);
 
+  // Left sidebar resize handler
+  const handleLeftResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizingLeft.current = true;
+    const startX = e.clientX;
+    const startWidth = leftWidth;
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!resizingLeft.current) return;
+      const delta = ev.clientX - startX;
+      setLeftWidth(Math.max(180, Math.min(500, startWidth + delta)));
+    };
+    const onMouseUp = () => {
+      resizingLeft.current = false;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [leftWidth]);
+
+  // Right sidebar resize handler
+  const handleRightResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizingRight.current = true;
+    const startX = e.clientX;
+    const startWidth = rightWidth;
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!resizingRight.current) return;
+      const delta = startX - ev.clientX;
+      setRightWidth(Math.max(280, Math.min(600, startWidth + delta)));
+    };
+    const onMouseUp = () => {
+      resizingRight.current = false;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [rightWidth]);
+
   // Terminal resize handlers
   const handleTerminalResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -973,7 +1017,8 @@ export default function Home() {
       <div className="relative flex flex-1 min-h-0">
         {/* Left sidebar - File Explorer */}
         <aside
-          className={`flex shrink-0 flex-col border-r border-[var(--border)] bg-[var(--sidebar-bg)] shadow-lg transition-[width] duration-200 ease-out ${leftOpen ? "w-64" : "w-0 overflow-hidden border-0"}`}
+          className={`relative flex shrink-0 flex-col border-r border-[var(--border)] bg-[var(--sidebar-bg)] shadow-lg ${leftOpen ? "" : "w-0 overflow-hidden border-0"}`}
+          style={leftOpen ? { width: leftWidth } : undefined}
         >
           <div className="flex h-10 shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
             <span className="text-xs font-medium uppercase tracking-wider text-[#8b949e]">
@@ -1072,7 +1117,7 @@ export default function Home() {
             <div className="border-b border-[var(--border)] px-3 py-2">
               <p className="truncate text-sm font-medium">{projectName}</p>
             </div>
-            <div className="flex-1 overflow-y-auto py-2">
+            <div className="flex-1 overflow-y-auto overflow-x-auto py-2">
               {fileTree.map((node) => (
                 <FileTreeItem
                   key={node.name}
@@ -1088,6 +1133,11 @@ export default function Home() {
               ))}
             </div>
           </div>
+          {/* Resize handle */}
+          <div
+            className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-[var(--accent)] transition-colors z-10"
+            onMouseDown={handleLeftResizeStart}
+          />
         </aside>
 
         {!leftOpen && (
@@ -1295,7 +1345,8 @@ export default function Home() {
 
         {/* Right panel - AI Assistant Chat */}
         <aside
-          className={`flex shrink-0 flex-col border-l border-[var(--border)] bg-[var(--sidebar-bg)] shadow-lg transition-[width] duration-200 ease-out ${rightOpen ? "w-96" : "w-0 overflow-hidden border-0"}`}
+          className={`relative flex shrink-0 flex-col border-l border-[var(--border)] bg-[var(--sidebar-bg)] shadow-lg ${rightOpen ? "" : "w-0 overflow-hidden border-0"}`}
+          style={rightOpen ? { width: rightWidth } : undefined}
         >
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-[var(--border)] px-4">
             <h2 className="text-sm font-semibold">AI Assistant</h2>
@@ -1319,7 +1370,7 @@ export default function Home() {
           </div>
 
           <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto overflow-x-auto p-4 space-y-4">
               {chatMessages.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full text-center text-[#8b949e]">
                   <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mb-3 opacity-50">
@@ -1399,6 +1450,11 @@ export default function Home() {
               </form>
             </div>
           </div>
+          {/* Resize handle */}
+          <div
+            className="absolute top-0 left-0 h-full w-1 cursor-col-resize hover:bg-[var(--accent)] transition-colors z-10"
+            onMouseDown={handleRightResizeStart}
+          />
         </aside>
 
         {!rightOpen && (
