@@ -39,6 +39,12 @@ export default function Home() {
     fileManager.handleCodeChange,
     fileManager.setFileContents,
     showToast,
+    {
+      setSelectedPath: fileManager.setSelectedPath,
+      setCurrentFileName: fileManager.setCurrentFileName,
+      setLanguage: fileManager.setLanguage,
+      setCode: fileManager.setCode,
+    },
   );
   const dragDrop = useDragDrop(
     fileManager.processFiles,

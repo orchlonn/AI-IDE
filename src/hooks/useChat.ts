@@ -12,6 +12,18 @@ export function useChat(
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const streamingRef = useRef("");
+  const rafRef = useRef<number | null>(null);
+  const aiMsgIdRef = useRef<string>("");
+
+  const flushStreaming = useCallback(() => {
+    const text = streamingRef.current;
+    const id = aiMsgIdRef.current;
+    setChatMessages((prev) =>
+      prev.map((m) => (m.id === id ? { ...m, content: text } : m)),
+    );
+    rafRef.current = null;
+  }, []);
 
   const sendChat = useCallback(async () => {
     const question = chatInput.trim();
@@ -31,6 +43,8 @@ export function useChat(
       role: "ai",
       content: "",
     };
+    aiMsgIdRef.current = aiMsg.id;
+    streamingRef.current = "";
     setChatMessages((prev) => [...prev, aiMsg]);
 
     try {
@@ -64,16 +78,20 @@ export function useChat(
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       if (reader) {
-        let accumulated = "";
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          accumulated += decoder.decode(value, { stream: true });
-          const text = accumulated;
-          setChatMessages((prev) =>
-            prev.map((m) => (m.id === aiMsg.id ? { ...m, content: text } : m)),
-          );
+          streamingRef.current += decoder.decode(value, { stream: true });
+          if (rafRef.current === null) {
+            rafRef.current = requestAnimationFrame(flushStreaming);
+          }
         }
+        // Final flush to ensure all content is rendered
+        if (rafRef.current !== null) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
+        flushStreaming();
       }
     } catch {
       setChatMessages((prev) =>
@@ -85,7 +103,7 @@ export function useChat(
       );
     }
     setChatLoading(false);
-  }, [chatInput, projectId, chatLoading, chatMessages, selectedPath, code]);
+  }, [chatInput, projectId, chatLoading, chatMessages, selectedPath, code, flushStreaming]);
 
   // Auto-scroll chat to bottom
   useEffect(() => {

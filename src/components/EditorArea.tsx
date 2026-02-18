@@ -37,7 +37,7 @@ export default function EditorArea({
 }: {
   currentFileName: string;
   language: string;
-  diffMode: { original: string; modified: string; language: string } | null;
+  diffMode: { original: string; modified: string; language: string; targetPath: string } | null;
   canRun: boolean;
   code: string;
   selectedPath: string;

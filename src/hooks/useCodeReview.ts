@@ -3,6 +3,13 @@
 import { useState, useRef, useCallback } from "react";
 import { getLanguageFromFileName } from "@/lib/fileUtils";
 
+interface FileNav {
+  setSelectedPath: (path: string) => void;
+  setCurrentFileName: (name: string) => void;
+  setLanguage: (lang: string) => void;
+  setCode: (code: string) => void;
+}
+
 export function useCodeReview(
   selectedPath: string,
   code: string,
@@ -11,11 +18,13 @@ export function useCodeReview(
   handleCodeChange: (newCode: string) => void,
   setFileContents: React.Dispatch<React.SetStateAction<Map<string, string>>>,
   showToast: (message: string, type: "error" | "warning" | "success") => void,
+  fileNav: FileNav,
 ) {
   const [diffMode, setDiffMode] = useState<{
     original: string;
     modified: string;
     language: string;
+    targetPath: string;
   } | null>(null);
   const lastApplied = useRef<{ path: string; previousContent: string } | null>(null);
 
@@ -27,6 +36,7 @@ export function useCodeReview(
         original,
         modified: suggestedCode,
         language: filePath ? getLanguageFromFileName(filePath) : language,
+        targetPath,
       });
     },
     [code, language, selectedPath, fileContents],
@@ -77,9 +87,25 @@ export function useCodeReview(
 
   const acceptDiff = useCallback(() => {
     if (!diffMode) return;
-    handleCodeChange(diffMode.modified);
+    const { targetPath, modified } = diffMode;
+
+    // Save current file before switching
+    setFileContents((prev) => {
+      const next = new Map(prev);
+      next.set(selectedPath, code);
+      next.set(targetPath, modified);
+      return next;
+    });
+
+    // Navigate to the changed file
+    const name = targetPath.split("/").pop() ?? targetPath;
+    fileNav.setSelectedPath(targetPath);
+    fileNav.setCurrentFileName(name);
+    fileNav.setLanguage(getLanguageFromFileName(name));
+    fileNav.setCode(modified);
+
     setDiffMode(null);
-  }, [diffMode, handleCodeChange]);
+  }, [diffMode, selectedPath, code, setFileContents, fileNav]);
 
   const rejectDiff = useCallback(() => {
     setDiffMode(null);
