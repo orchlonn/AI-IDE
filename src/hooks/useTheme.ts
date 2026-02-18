@@ -7,7 +7,7 @@ import {
   THEME_STORAGE_KEY,
   type ThemeId,
   type ThemeDefinition,
-} from "./themes";
+} from "@/lib/themes";
 
 export function useTheme() {
   const [themeId, setThemeId] = useState<ThemeId>(DEFAULT_THEME);
