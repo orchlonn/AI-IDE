@@ -1,7 +1,13 @@
 import type { NextConfig } from "next";
+import path from "node:path";
+
+const projectRoot = path.resolve(process.cwd());
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  turbopack: {
+    root: projectRoot,
+  },
+  outputFileTracingRoot: projectRoot,
 };
 
 export default nextConfig;
