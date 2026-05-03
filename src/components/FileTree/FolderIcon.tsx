@@ -4,7 +4,7 @@ export default function FolderIcon({ open }: { open: boolean }) {
       width="16"
       height="16"
       viewBox="0 0 16 16"
-      className="shrink-0 text-[#d29922]"
+      className="shrink-0 text-[#9aa0aa] opacity-90"
       fill="currentColor"
     >
       {open ? (

@@ -57,39 +57,53 @@ export default function EditorArea({
   return (
     <main className="flex flex-1 flex-col min-w-0 min-h-0">
       {/* Editor toolbar */}
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--editor-bg)] px-3">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium">
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--editor-bg)]/60 px-3 backdrop-blur-xl">
+        <div className="flex min-w-0 items-center gap-2">
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="shrink-0 text-[var(--muted)]"
+          >
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+          <span className="truncate text-[12.5px] font-medium text-[var(--foreground)]">
             {currentFileName}
           </span>
-          <span className="rounded bg-[var(--hover-bg)] px-2 py-0.5 text-xs text-[var(--muted)]">
+          <span className="ml-1 rounded-md border border-[var(--border)] bg-[var(--hover-bg)] px-1.5 py-px font-mono text-[10.5px] uppercase tracking-wide text-[var(--muted-strong)]">
             {language}
           </span>
         </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            className="rounded px-2 py-1 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
-          >
-            Save
-          </button>
+        <div className="flex items-center gap-0.5">
           <button
             type="button"
             onClick={onFormat}
-            className="rounded px-2 py-1 text-xs text-[var(--muted)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+            className="ray-focus flex items-center gap-1 rounded-md px-2 py-1 text-[11.5px] text-[var(--muted-strong)] transition-colors hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+            title="Format file"
           >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="21" y1="10" x2="3" y2="10" />
+              <line x1="21" y1="6" x2="3" y2="6" />
+              <line x1="21" y1="14" x2="9" y2="14" />
+              <line x1="21" y1="18" x2="9" y2="18" />
+            </svg>
             Format
           </button>
           {canRun && (
             <button
               type="button"
               onClick={onRunFile}
-              className="flex items-center gap-1 rounded bg-[#238636] px-2.5 py-1 text-xs text-white transition-colors hover:bg-[#2ea043]"
+              className="ray-focus ml-1 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] font-medium text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_1px_2px_rgba(0,0,0,0.3)] transition-transform hover:scale-[1.02] active:scale-[0.98]"
+              style={{ background: "var(--gradient-accent)" }}
               title="Run file"
             >
               <svg
-                width="12"
-                height="12"
+                width="11"
+                height="11"
                 viewBox="0 0 24 24"
                 fill="currentColor"
                 stroke="none"
@@ -130,7 +144,7 @@ export default function EditorArea({
       {terminalOpen && (
         <>
           <div
-            className="h-1 shrink-0 cursor-row-resize bg-[var(--border)] hover:bg-[var(--accent)] transition-colors"
+            className="h-px shrink-0 cursor-row-resize bg-[var(--border)] transition-colors hover:bg-[var(--accent)]/40"
             onMouseDown={onTerminalResizeStart}
           />
           <div className="shrink-0" style={{ height: terminalHeight }}>

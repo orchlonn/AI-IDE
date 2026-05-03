@@ -53,9 +53,16 @@ export default function FileTreeItem({
           e.preventDefault();
           startRename();
         }}
-        className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--hover-bg)] ${isSelected ? "bg-[var(--selected-bg)] text-[var(--accent)]" : "text-[#8b949e]"}`}
-        style={{ paddingLeft: `${12 + depth * 16}px` }}
+        className={`group relative flex w-full items-center gap-2 rounded-md py-[5px] pr-2 text-left text-[12.5px] transition-colors ${
+          isSelected
+            ? "bg-[var(--selected-bg)] text-[var(--foreground)]"
+            : "text-[var(--muted-strong)] hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+        }`}
+        style={{ paddingLeft: `${10 + depth * 14}px` }}
       >
+        {isSelected && (
+          <span className="absolute left-1 top-1/2 h-3.5 w-[2px] -translate-y-1/2 rounded-full bg-[var(--accent)]" />
+        )}
         <FileIcon extension={editing ? editValue.split(".").pop() : node.extension} />
         {editing ? (
           <input
@@ -69,7 +76,7 @@ export default function FileTreeItem({
             }}
             onClick={(e) => e.stopPropagation()}
             autoFocus
-            className="min-w-0 flex-1 rounded bg-[var(--editor-bg)] px-1 py-0.5 text-sm text-[var(--foreground)] outline-none ring-1 ring-[var(--accent)]"
+            className="min-w-0 flex-1 rounded bg-[var(--editor-bg)] px-1 py-0.5 text-[12.5px] text-[var(--foreground)] outline-none ring-1 ring-[var(--accent)]"
           />
         ) : (
           <span className="truncate">{node.name}</span>
@@ -83,20 +90,30 @@ export default function FileTreeItem({
       <button
         type="button"
         onClick={() => toggleFolder(path)}
-        className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-[var(--hover-bg)] ${isSelected ? "bg-[var(--selected-bg)] text-[var(--foreground)]" : "text-[#8b949e]"}`}
-        style={{ paddingLeft: `${12 + depth * 16}px` }}
+        className={`group flex w-full items-center gap-2 rounded-md py-[5px] pr-2 text-left text-[12.5px] transition-colors ${
+          isSelected
+            ? "bg-[var(--selected-bg)] text-[var(--foreground)]"
+            : "text-[var(--muted-strong)] hover:bg-[var(--hover-bg)] hover:text-[var(--foreground)]"
+        }`}
+        style={{ paddingLeft: `${10 + depth * 14}px` }}
       >
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 12 12"
+          className={`shrink-0 text-[var(--muted)] transition-transform duration-150 ${
+            isExpanded ? "rotate-90" : ""
+          }`}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M4 2L8 6L4 10" />
+        </svg>
         <FolderIcon open={isExpanded} />
         <span className="truncate">{node.name}</span>
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          className={`ml-auto shrink-0 text-[#8b949e] transition-transform ${isExpanded ? "rotate-90" : ""}`}
-          fill="currentColor"
-        >
-          <path d="M4 2L8 6L4 10V2Z" />
-        </svg>
       </button>
       {isExpanded && node.children && (
         <div className="w-full">

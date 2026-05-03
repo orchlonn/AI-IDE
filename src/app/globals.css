@@ -1,22 +1,51 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0d1117;
-  --foreground: #e6edf3;
-  --sidebar-bg: #161b22;
-  --panel-bg: #0d1117;
-  --editor-bg: #0d1117;
-  --border: #30363d;
-  --accent: #58a6ff;
-  --accent-muted: #388bfd26;
-  --hover-bg: #21262d;
-  --selected-bg: #388bfd26;
-  --line-highlight: #1c2128;
-  --status-bar: #161b22;
-  --chat-user-bg: #388bfd26;
-  --chat-ai-bg: #21262d;
-  --code-block-bg: #161b22;
-  --muted: #8b949e;
+  /* Raycast-inspired dark surface — near-black with a faint warm tint */
+  --background: #0a0a0c;
+  --foreground: #ededef;
+  --sidebar-bg: #111114;
+  --panel-bg: #0a0a0c;
+  --editor-bg: #0a0a0c;
+
+  /* Hairline borders — translucent so they sit gently on any surface */
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.1);
+
+  /* Accent — keep the existing blue but tuned a touch warmer/brighter */
+  --accent: #7aa7ff;
+  --accent-glow: rgba(122, 167, 255, 0.18);
+  --accent-muted: rgba(122, 167, 255, 0.14);
+
+  /* Interaction states — Raycast uses translucent whites instead of solid greys */
+  --hover-bg: rgba(255, 255, 255, 0.04);
+  --hover-bg-strong: rgba(255, 255, 255, 0.07);
+  --selected-bg: rgba(255, 255, 255, 0.08);
+  --line-highlight: rgba(255, 255, 255, 0.03);
+
+  --status-bar: #0d0d10;
+  --chat-user-bg: rgba(122, 167, 255, 0.14);
+  --chat-ai-bg: rgba(255, 255, 255, 0.04);
+  --code-block-bg: #0d0d10;
+  --muted: #8b8b94;
+  --muted-strong: #a8a8b3;
+
+  /* Frosted-glass panels */
+  --glass-bg: rgba(17, 17, 20, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.08);
+
+  /* Gradients used in CTAs and the logo */
+  --gradient-accent: linear-gradient(135deg, #7aa7ff 0%, #b58cff 100%);
+  --gradient-accent-soft: linear-gradient(
+    135deg,
+    rgba(122, 167, 255, 0.18) 0%,
+    rgba(181, 140, 255, 0.18) 100%
+  );
+
+  /* Soft, downward shadow stack (no glow) */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.55);
 }
 
 @theme inline {
@@ -34,40 +63,112 @@ body {
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(
+      1200px 800px at 80% -10%,
+      rgba(122, 167, 255, 0.06),
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 700px at -10% 110%,
+      rgba(181, 140, 255, 0.05),
+      transparent 60%
+    ),
+    var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Editor textarea selection styling */
+/* Scrollbars — slim, translucent, Raycast-style */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.06);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.12);
+  background-clip: padding-box;
+}
+
+/* Editor textarea selection */
 textarea::selection {
-  background: rgba(56, 139, 253, 0.3);
+  background: var(--accent-muted);
   color: transparent;
 }
 
-textarea {
-  tab-size: 2;
-  -moz-tab-size: 2;
-}
-
+textarea,
 pre {
   tab-size: 2;
   -moz-tab-size: 2;
 }
 
-/* Chat markdown prose styles */
+/* Chat markdown prose */
 .chat-markdown pre {
   margin: 0;
 }
-
 .chat-markdown > *:first-child {
   margin-top: 0;
 }
-
 .chat-markdown > *:last-child {
   margin-bottom: 0;
 }
 
+/* Glass utility — Raycast's command-bar surface */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid var(--glass-border);
+}
+
+/* Subtle inner highlight on cards (top edge) */
+.ray-card {
+  position: relative;
+  background: var(--sidebar-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.ray-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    transparent 30%
+  );
+}
+
+/* Keyboard-shortcut chips */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom-width: 2px;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--muted-strong);
+}
+
+/* Animations */
 @keyframes slideUp {
   from {
     opacity: 0;
@@ -77,4 +178,73 @@ pre {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes pulseDot {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes orbFloat {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-8px) scale(1.02);
+  }
+}
+
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 0%,
+    var(--foreground) 50%,
+    var(--muted) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2s linear infinite;
+}
+
+/* Focus rings — soft, accent-tinted */
+.ray-focus:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--accent-glow);
 }
